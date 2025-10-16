@@ -1,39 +1,52 @@
 ﻿<Window x:Class="VoiceChatApp.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Voice Chat" Height="600" Width="968"
+        Title="Voice Chat" Height="650" Width="961"
         Background="#1B1B1B" Foreground="White">
 
-    <Grid>
+    <Grid Margin="0,0,-11,0">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
+        <!-- لوگو و کاربران -->
         <StackPanel Grid.Column="0" Background="#252526">
             <Border Height="100" Background="#007ACC" VerticalAlignment="Top">
                 <TextBlock Text="VoiceChat" Foreground="White" 
                            FontSize="24" FontWeight="Bold"
                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
+            <TextBlock Text="Online Users:" Margin="5" FontWeight="Bold"/>
             <ListBox x:Name="UsersList" Background="#252526" BorderThickness="0" Foreground="White"/>
         </StackPanel>
 
+        <!-- بخش چت + log -->
         <Grid Grid.Column="1" Margin="10">
             <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="3*"/>
+                <!-- پیام‌ها -->
+                <RowDefinition Height="2*"/>
+                <!-- log -->
                 <RowDefinition Height="Auto"/>
+                <!-- ورودی پیام و دکمه‌ها -->
             </Grid.RowDefinitions>
 
+            <!-- پیام‌ها -->
             <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Name="ChatScroll">
                 <StackPanel x:Name="ChatPanel" Margin="0,0,0,10"/>
             </ScrollViewer>
 
-            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Stretch" Margin="0,5,0,0">
+            <!-- Log panel -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Background="#2D2D30" Margin="0,5,0,0">
+                <StackPanel x:Name="LogPanel" Margin="5"/>
+            </ScrollViewer>
+
+            <!-- ورودی پیام و دکمه‌ها -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Stretch" Margin="0,5,0,0">
                 <TextBox x:Name="MessageInput" Width="450" Height="35" Margin="0,0,10,0"
                          Background="#2D2D30" Foreground="White" BorderThickness="0"
-                         Padding="5" FontSize="14" 
-                         />
+                         Padding="5" FontSize="14" />
                 <Button Content="Send" Width="80" Height="35" Background="#28A745" Foreground="White"
                         BorderThickness="0" Click="Send_Click" Margin="0,0,10,0"/>
                 <Button Content="Start Call" Width="90" Height="35" Background="#007ACC" Foreground="White"
