@@ -29,7 +29,8 @@ namespace VoiceChatApp
         public MainWindow()
         {
             InitializeComponent();
-            ConnectWebSocket("ws://185.190.39.44:4040/hub");
+            ConnectWebSocket("ws://185.190.39.44:4040/chathub");
+           // ConnectWebSocket("wss://localhost:7208/chathub");
         }
 
         #region Audio Methods
@@ -85,9 +86,16 @@ namespace VoiceChatApp
                 await ws.ConnectAsync(new Uri(url), CancellationToken.None);
                 AddLog("Connected to server");
 
-                // Send hello message with clientId
-                var helloMsg = JsonConvert.SerializeObject(new { type = "hello", clientId = clientId });
-                await SendMessageAsync(helloMsg);
+                // Send SignalR Handshake
+                var handshake = "{\"protocol\":\"json\",\"version\":1}\u001e";
+                await SendMessageAsync(handshake);
+                AddLog("Handshake sent");
+
+
+                //Send your actual message
+                var msg = "{\"type\":1,\"target\":\"SendMessage\",\"arguments\":[\"message\",\"Hello from Postman!\"]}\u001e";
+                await SendMessageAsync(msg);
+                AddLog("Message sent");
 
                 // Start receiving loop
                 _ = Task.Run(ReceiveLoop);
@@ -97,6 +105,7 @@ namespace VoiceChatApp
                 AddLog($"WebSocket connection error: {ex.Message}");
             }
         }
+
 
         private async Task ReceiveLoop()
         {
@@ -126,55 +135,73 @@ namespace VoiceChatApp
             }
         }
 
+
+        public static string BuildInvocationMessage(string target, string[] arguments, string invocationId)
+        {
+            var payload = new
+            {
+                type = 1,
+                target = target,
+                arguments = arguments,
+            };
+
+            // Serialize to JSON and append U+001E (record separator)
+            return JsonConvert.SerializeObject(payload) + "\u001e";
+        }
+
+        public class ChatMessage
+        {
+            public int? type { get; set; }
+            public string? target { get; set; }
+            public string[]? arguments { get; set; }
+        }
+
         private void HandleTextMessage(string msg)
         {
             try
             {
-                dynamic data = JsonConvert.DeserializeObject(msg);
-                string type = data.type;
+                // پیام ممکنه شامل چند بخش جداشده با \u001e باشه
+                var segments = msg.Split('\u001e', StringSplitOptions.RemoveEmptyEntries);
 
-                if (type == "message")
+                foreach (var segment in segments)
                 {
-                    string senderId = data.clientId;
-                    string messageText = data.message;
+                    var data = JsonConvert.DeserializeObject<ChatMessage>(segment);
 
-                    AddChatMessage(senderId, messageText);
-                    AddLog($"Received from {senderId}: {messageText}");
-                    // Only show messages from others
-                    if (senderId != clientId)
+                    if (data == null || string.IsNullOrEmpty(data.target) || data.arguments == null || data.arguments.Length < 2)
+                        continue;
+
+                    if (data.type == 6)
+                        continue; // پیام ping رو نادیده بگیر
+
+                    if (data.target == "ReceiveMessage")
                     {
-                        Dispatcher.Invoke(() => AddChatMessage(senderId, messageText));
-                        Dispatcher.Invoke(() => AddLog($"Received from {senderId}: {messageText}"));
+                        var senderId = data.arguments[0];
+                        var message = data.arguments[1];
+
+                        // نمایش پیام در UI
+                        Dispatcher.BeginInvoke(() => AddMessage(senderId, message));
+                        Dispatcher.BeginInvoke(() => AddLog($"Received from {senderId}: {message}"));
+
+                        // فقط پیام‌های دیگران رو نمایش بده
+                        if (senderId != clientId)
+                        {
+                            Dispatcher.BeginInvoke(() => AddMessage(senderId, message));
+                            Dispatcher.BeginInvoke(() => AddLog($"Received from {senderId}: {message}"));
+                        }
+
+                        // اضافه کردن کاربر جدید به لیست آنلاین
+                        if (!onlineUsers.Contains(senderId))
+                        {
+                            onlineUsers.Add(senderId);
+                            Dispatcher.BeginInvoke(() => UsersList.Items.Add(senderId));
+                            Dispatcher.BeginInvoke(() => AddLog($"User connected: {senderId}"));
+                        }
                     }
-                }
-                else if (type == "hello")
-                {
-                    string newUserId = data.clientId;
-                    if (!onlineUsers.Contains(newUserId))
-                    {
-                        onlineUsers.Add(newUserId);
-                        Dispatcher.Invoke(() => UsersList.Items.Add(newUserId));
-                        Dispatcher.Invoke(() => AddLog($"User connected: {newUserId}"));
-                    }
-                }
-                else if (type == "disconnect")
-                {
-                    string userId = data.clientId;
-                    if (onlineUsers.Contains(userId))
-                    {
-                        onlineUsers.Remove(userId);
-                        Dispatcher.Invoke(() => UsersList.Items.Remove(userId));
-                        Dispatcher.Invoke(() => AddLog($"User disconnected: {userId}"));
-                    }
-                }
-                else
-                {
-                    Dispatcher.Invoke(() => AddLog($"Unknown message type: {msg}"));
                 }
             }
             catch
             {
-                Dispatcher.Invoke(() => AddLog($"Invalid JSON received: {msg}"));
+                Dispatcher.BeginInvoke(() => AddLog($"Invalid JSON received: {msg}"));
             }
         }
 
@@ -184,7 +211,7 @@ namespace VoiceChatApp
             {
                 var bytes = Encoding.UTF8.GetBytes(msg);
                 await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
-                
+
             }
         }
 
@@ -198,7 +225,7 @@ namespace VoiceChatApp
         #endregion
 
         #region UI Methods
-        private void AddChatMessage(string sender, string message)
+        private void AddMessage(string sender, string message)
         {
             var border = new Border
             {
@@ -241,13 +268,13 @@ namespace VoiceChatApp
             if (string.IsNullOrEmpty(msg)) return;
 
             // Show message immediately
-            AddChatMessage("You", msg);
-           
+            this.AddMessage("You", msg);
+
             AddLog($"Sent: {msg}");
 
             // Send to server
-            var jsonMsg = JsonConvert.SerializeObject(new { type = "message", clientId = clientId, message = msg });
-            await SendMessageAsync(jsonMsg);
+            var mess = BuildInvocationMessage("SendMessage", new string[] { msg }, string.Empty);
+            await SendMessageAsync(mess);
 
             MessageInput.Clear();
         }
