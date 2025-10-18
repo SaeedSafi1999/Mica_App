@@ -1,4 +1,6 @@
-﻿using NAudio.Wave;
+﻿using Microsoft.AspNetCore.SignalR.Client;
+using NAudio.Wave;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Net.WebSockets;
@@ -8,19 +10,17 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using Newtonsoft.Json;
+using YourNamespace;
 
 namespace VoiceChatApp
 {
     public partial class MainWindow : Window
     {
         // Audio
-        private WaveInEvent waveIn;
-        private WaveOutEvent waveOut;
         private BufferedWaveProvider waveProvider;
 
         // WebSocket
-        private ClientWebSocket ws;
+        private readonly AudioSignalRClient _audio;
         private string clientId = Guid.NewGuid().ToString();
 
         // Online users
@@ -29,47 +29,15 @@ namespace VoiceChatApp
         public MainWindow()
         {
             InitializeComponent();
+            _audio = new AudioSignalRClient(this,Dispatcher,clientId);
             ConnectWebSocket("ws://185.190.39.44:4040/chathub");
-           // ConnectWebSocket("wss://localhost:7208/chathub");
+            //ConnectWebSocket("wss://localhost:7208/chathub");
         }
 
         #region Audio Methods
-        private void StartRecording()
-        {
-            waveIn = new WaveInEvent();
-            waveIn.WaveFormat = new WaveFormat(16000, 16, 1);
-            waveIn.DataAvailable += async (s, a) =>
-            {
-                await SendAudioAsync(a.Buffer);
-            };
-            waveIn.StartRecording();
-            AddLog("Recording started");
-        }
 
-        private void StopRecording()
-        {
-            waveIn?.StopRecording();
-            waveIn?.Dispose();
-            waveIn = null;
-            AddLog("Recording stopped");
-        }
 
-        private void StartPlayback()
-        {
-            waveProvider = new BufferedWaveProvider(new WaveFormat(16000, 16, 1));
-            waveOut = new WaveOutEvent();
-            waveOut.Init(waveProvider);
-            waveOut.Play();
-            AddLog("Playback started");
-        }
 
-        private void StopPlayback()
-        {
-            waveOut?.Stop();
-            waveOut?.Dispose();
-            waveOut = null;
-            AddLog("Playback stopped");
-        }
 
         private void PlayAudio(byte[] buffer)
         {
@@ -82,23 +50,10 @@ namespace VoiceChatApp
         {
             try
             {
-                ws = new ClientWebSocket();
-                await ws.ConnectAsync(new Uri(url), CancellationToken.None);
+                await _audio.ConnectAsync(url);
                 AddLog("Connected to server");
-
-                // Send SignalR Handshake
-                var handshake = "{\"protocol\":\"json\",\"version\":1}\u001e";
-                await SendMessageAsync(handshake);
-                AddLog("Handshake sent");
-
-
-                //Send your actual message
-                var msg = "{\"type\":1,\"target\":\"SendMessage\",\"arguments\":[\"message\",\"Hello from Postman!\"]}\u001e";
-                await SendMessageAsync(msg);
-                AddLog("Message sent");
-
                 // Start receiving loop
-                _ = Task.Run(ReceiveLoop);
+                _ = Task.Run(_audio.ReceiveLoop);
             }
             catch (Exception ex)
             {
@@ -107,35 +62,9 @@ namespace VoiceChatApp
         }
 
 
-        private async Task ReceiveLoop()
-        {
-            var buffer = new byte[8192];
-            while (ws.State == WebSocketState.Open)
-            {
-                try
-                {
-                    var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+       
 
-                    if (result.MessageType == WebSocketMessageType.Text)
-                    {
-                        var msg = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        HandleTextMessage(msg);
-                    }
-                    else if (result.MessageType == WebSocketMessageType.Binary)
-                    {
-                        var audio = new byte[result.Count];
-                        Array.Copy(buffer, audio, result.Count);
-                        PlayAudio(audio);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AddLog($"WebSocket receive error: {ex.Message}");
-                }
-            }
-        }
-
-
+       
         public static string BuildInvocationMessage(string target, string[] arguments, string invocationId)
         {
             var payload = new
@@ -156,76 +85,17 @@ namespace VoiceChatApp
             public string[]? arguments { get; set; }
         }
 
-        private void HandleTextMessage(string msg)
-        {
-            try
-            {
-                // پیام ممکنه شامل چند بخش جداشده با \u001e باشه
-                var segments = msg.Split('\u001e', StringSplitOptions.RemoveEmptyEntries);
-
-                foreach (var segment in segments)
-                {
-                    var data = JsonConvert.DeserializeObject<ChatMessage>(segment);
-
-                    if (data == null || string.IsNullOrEmpty(data.target) || data.arguments == null || data.arguments.Length < 2)
-                        continue;
-
-                    if (data.type == 6)
-                        continue; // پیام ping رو نادیده بگیر
-
-                    if (data.target == "ReceiveMessage")
-                    {
-                        var senderId = data.arguments[0];
-                        var message = data.arguments[1];
-
-                        // نمایش پیام در UI
-                        Dispatcher.BeginInvoke(() => AddMessage(senderId, message));
-                        Dispatcher.BeginInvoke(() => AddLog($"Received from {senderId}: {message}"));
-
-                        // فقط پیام‌های دیگران رو نمایش بده
-                        if (senderId != clientId)
-                        {
-                            Dispatcher.BeginInvoke(() => AddMessage(senderId, message));
-                            Dispatcher.BeginInvoke(() => AddLog($"Received from {senderId}: {message}"));
-                        }
-
-                        // اضافه کردن کاربر جدید به لیست آنلاین
-                        if (!onlineUsers.Contains(senderId))
-                        {
-                            onlineUsers.Add(senderId);
-                            Dispatcher.BeginInvoke(() => UsersList.Items.Add(senderId));
-                            Dispatcher.BeginInvoke(() => AddLog($"User connected: {senderId}"));
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                Dispatcher.BeginInvoke(() => AddLog($"Invalid JSON received: {msg}"));
-            }
-        }
 
         private async Task SendMessageAsync(string msg)
         {
-            if (ws?.State == WebSocketState.Open)
-            {
-                var bytes = Encoding.UTF8.GetBytes(msg);
-                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
-
-            }
+            await _audio.SendChatMessageAsync(msg);
         }
 
-        private async Task SendAudioAsync(byte[] audio)
-        {
-            if (ws?.State == WebSocketState.Open)
-            {
-                await ws.SendAsync(new ArraySegment<byte>(audio), WebSocketMessageType.Binary, true, CancellationToken.None);
-            }
-        }
+       
         #endregion
 
         #region UI Methods
-        private void AddMessage(string sender, string message)
+        public void AddMessage(string sender, string message)
         {
             var border = new Border
             {
@@ -250,7 +120,7 @@ namespace VoiceChatApp
             ChatScroll.ScrollToEnd();
         }
 
-        private void AddLog(string text)
+        public void AddLog(string text)
         {
             var tb = new TextBlock
             {
@@ -273,22 +143,21 @@ namespace VoiceChatApp
             AddLog($"Sent: {msg}");
 
             // Send to server
-            var mess = BuildInvocationMessage("SendMessage", new string[] { msg }, string.Empty);
-            await SendMessageAsync(mess);
+            await SendMessageAsync(msg);
 
             MessageInput.Clear();
         }
 
-        private void StartCall_Click(object sender, RoutedEventArgs e)
+        private async void StartCall_Click(object sender, RoutedEventArgs e)
         {
-            StartRecording();
-            StartPlayback();
+            _audio.StartRecording();
+            _audio. StartPlayback();
         }
 
         private void StopCall_Click(object sender, RoutedEventArgs e)
         {
-            StopRecording();
-            StopPlayback();
+            _audio.StopRecording();
+            _audio.StopPlayback();
         }
         #endregion
     }
