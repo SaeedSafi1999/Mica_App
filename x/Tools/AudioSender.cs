@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.VisualBasic.Devices;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using Newtonsoft.Json;
 using System.Security.Policy;
@@ -98,19 +99,96 @@ public class AudioSignalRClient
         }
     }
 
-    public void StartRecording()
+    //public void StartRecording()
+    //{
+
+    //    waveIn = new WaveInEvent();
+    //    waveIn.WaveFormat = new WaveFormat(48000, 16, 2);
+
+    //    waveIn.DataAvailable += async (s, a) =>
+    //    {
+    //        await SendAudioAsync(a.Buffer);
+    //    };
+
+    //    waveIn.StartRecording();
+    //    _mainWindow.AddLog("Recording started");
+    //}
+
+
+    public void StartRecording(int deviceIndex = 0)
     {
         waveIn = new WaveInEvent();
-        waveIn.WaveFormat = new WaveFormat(16000, 16, 1);
+        waveIn.DeviceNumber = deviceIndex;
 
+        for (int i = 0; i < WaveIn.DeviceCount; i++)
+        {
+            var dev = WaveIn.GetCapabilities(i);
+            _mainWindow.AddLog($"[{i}] {dev.ProductName} | Channels: {dev.Channels}");
+        }
+
+        // فقط *یکبار* ثبت رویداد
         waveIn.DataAvailable += async (s, a) =>
         {
             await SendAudioAsync(a.Buffer);
         };
 
-        waveIn.StartRecording();
-        Console.WriteLine("Recording started");
+        WaveFormat[] testFormats =
+  {
+        new WaveFormat(96000, 16, 1),
+        new WaveFormat(96000, 16, 2),
+        new WaveFormat(48000, 16, 1),
+        new WaveFormat(48000, 16, 2),
+        new WaveFormat(44100, 16, 1),
+        new WaveFormat(44100, 16, 2),
+        new WaveFormat(22050, 16, 1),
+        new WaveFormat(22050, 16, 2),
+        new WaveFormat(11025, 16, 1),
+        new WaveFormat(11025, 16, 2),
+
+        // اگر لازم بود 8bit هم استفاده بشه:
+        new WaveFormat(96000, 8, 1),
+        new WaveFormat(96000, 8, 2),
+        new WaveFormat(48000, 8, 1),
+        new WaveFormat(48000, 8, 2),
+        new WaveFormat(44100, 8, 1),
+        new WaveFormat(44100, 8, 2),
+        new WaveFormat(22050, 8, 1),
+        new WaveFormat(22050, 8, 2),
+        new WaveFormat(11025, 8, 1),
+        new WaveFormat(11025, 8, 2),
+    };
+
+
+
+        bool initialized = false;
+
+        foreach (var format in testFormats)
+        {
+            try
+            {
+                waveIn.WaveFormat = format;
+                waveIn.StartRecording();
+
+                _mainWindow.AddLog($"✅Recording started with {format.SampleRate}Hz / {format.BitsPerSample}bit / {format.Channels}ch");
+                initialized = true;
+                break;
+            }
+            catch
+            {
+                _mainWindow.AddLog($"❌ Failed format {format.SampleRate}/{format.Channels}");
+            }
+        }
+
+        if (!initialized)
+        {
+            _mainWindow.AddLog("❌ No compatible audio format found for this device.");
+        }
     }
+
+
+
+
+
 
     public void StopRecording()
     {
@@ -119,7 +197,7 @@ public class AudioSignalRClient
             waveIn.StopRecording();
             waveIn.Dispose();
             waveIn = null;
-            Console.WriteLine("Recording stopped");
+            _mainWindow.AddLog("Recording stopped");
         }
     }
 
