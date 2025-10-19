@@ -99,69 +99,63 @@ public class AudioSignalRClient
         }
     }
 
-    //public void StartRecording()
-    //{
 
-    //    waveIn = new WaveInEvent();
-    //    waveIn.WaveFormat = new WaveFormat(48000, 16, 2);
-
-    //    waveIn.DataAvailable += async (s, a) =>
-    //    {
-    //        await SendAudioAsync(a.Buffer);
-    //    };
-
-    //    waveIn.StartRecording();
-    //    _mainWindow.AddLog("Recording started");
-    //}
+    
 
 
     public void StartRecording(int deviceIndex = 0)
     {
-        waveIn = new WaveInEvent();
-        waveIn.DeviceNumber = deviceIndex;
+       
+        // انتخاب device
+        if (deviceIndex >= WaveIn.DeviceCount) deviceIndex = 0;
 
-        for (int i = 0; i < WaveIn.DeviceCount; i++)
+        waveIn = new WaveInEvent
         {
-            var dev = WaveIn.GetCapabilities(i);
-            _mainWindow.AddLog($"[{i}] {dev.ProductName} | Channels: {dev.Channels}");
-        }
+            DeviceNumber = deviceIndex,
+            BufferMilliseconds = 100 
+        };
 
-        // فقط *یکبار* ثبت رویداد
         waveIn.DataAvailable += async (s, a) =>
         {
             await SendAudioAsync(a.Buffer);
         };
 
         WaveFormat[] testFormats =
-  {
+        {
+        // 96 kHz
         new WaveFormat(96000, 16, 1),
         new WaveFormat(96000, 16, 2),
-        new WaveFormat(48000, 16, 1),
-        new WaveFormat(48000, 16, 2),
-        new WaveFormat(44100, 16, 1),
-        new WaveFormat(44100, 16, 2),
-        new WaveFormat(22050, 16, 1),
-        new WaveFormat(22050, 16, 2),
-        new WaveFormat(11025, 16, 1),
-        new WaveFormat(11025, 16, 2),
-
-        // اگر لازم بود 8bit هم استفاده بشه:
         new WaveFormat(96000, 8, 1),
         new WaveFormat(96000, 8, 2),
+
+        // 48 kHz
+        new WaveFormat(48000, 16, 1),
+        new WaveFormat(48000, 16, 2),
         new WaveFormat(48000, 8, 1),
         new WaveFormat(48000, 8, 2),
+
+        // 44.1 kHz
+        new WaveFormat(44100, 16, 1),
+        new WaveFormat(44100, 16, 2),
         new WaveFormat(44100, 8, 1),
         new WaveFormat(44100, 8, 2),
+
+        // 22.05 kHz
+        new WaveFormat(22050, 16, 1),
+        new WaveFormat(22050, 16, 2),
         new WaveFormat(22050, 8, 1),
         new WaveFormat(22050, 8, 2),
+
+        // 11.025 kHz
+        new WaveFormat(11025, 16, 1),
+        new WaveFormat(11025, 16, 2),
         new WaveFormat(11025, 8, 1),
-        new WaveFormat(11025, 8, 2),
-    };
-
-
+        new WaveFormat(11025, 8, 2)
+        };
 
         bool initialized = false;
 
+        // تلاش برای همه فرمت‌ها
         foreach (var format in testFormats)
         {
             try
@@ -169,19 +163,33 @@ public class AudioSignalRClient
                 waveIn.WaveFormat = format;
                 waveIn.StartRecording();
 
-                _mainWindow.AddLog($"✅Recording started with {format.SampleRate}Hz / {format.BitsPerSample}bit / {format.Channels}ch");
+                _mainWindow.AddLog($"✅ Recording started with {format.SampleRate}Hz / {format.BitsPerSample}bit / {format.Channels}ch");
                 initialized = true;
                 break;
             }
-            catch
+            catch (Exception ex)
             {
-                _mainWindow.AddLog($"❌ Failed format {format.SampleRate}/{format.Channels}");
+                _mainWindow.AddLog($"❌ Failed format {format.SampleRate}Hz / {format.Channels}ch: {ex.Message}");
             }
         }
 
+        // اگر هیچ فرمت WaveInEvent جواب نداد، fallback به WASAPI
         if (!initialized)
         {
-            _mainWindow.AddLog("❌ No compatible audio format found for this device.");
+            try
+            {
+                var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+                var device = enumerator.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Capture, NAudio.CoreAudioApi.Role.Console);
+                var capture = new WasapiCapture(device);
+                capture.DataAvailable += async (s, a) => await SendAudioAsync(a.Buffer);
+                capture.StartRecording();
+
+                _mainWindow.AddLog($"🎤 Recording started using WASAPI on {device.FriendlyName} with format {capture.WaveFormat.SampleRate}Hz / {capture.WaveFormat.BitsPerSample}bit / {capture.WaveFormat.Channels}ch");
+            }
+            catch (Exception ex)
+            {
+                _mainWindow.AddLog($"❌ Failed to start WASAPI recording: {ex.Message}");
+            }
         }
     }
 

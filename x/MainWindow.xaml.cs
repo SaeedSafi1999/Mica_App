@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using x.Pages;
 using YourNamespace;
 
 namespace VoiceChatApp
@@ -18,6 +19,7 @@ namespace VoiceChatApp
     {
         // Audio
         private BufferedWaveProvider waveProvider;
+
 
         // WebSocket
         private readonly AudioSignalRClient _audio;
@@ -29,7 +31,7 @@ namespace VoiceChatApp
         public MainWindow()
         {
             InitializeComponent();
-            _audio = new AudioSignalRClient(this,Dispatcher,clientId);
+            _audio = new AudioSignalRClient(this, Dispatcher, clientId);
             ConnectWebSocket("ws://185.190.39.44:4040/chathub");
             //ConnectWebSocket("wss://localhost:7208/chathub");
         }
@@ -62,9 +64,9 @@ namespace VoiceChatApp
         }
 
 
-       
 
-       
+
+
         public static string BuildInvocationMessage(string target, string[] arguments, string invocationId)
         {
             var payload = new
@@ -91,7 +93,7 @@ namespace VoiceChatApp
             await _audio.SendChatMessageAsync(msg);
         }
 
-       
+
         #endregion
 
         #region UI Methods
@@ -150,8 +152,8 @@ namespace VoiceChatApp
 
         private async void StartCall_Click(object sender, RoutedEventArgs e)
         {
-            _audio.StartRecording();
-            _audio. StartPlayback();
+            var chooseWindow = new ChooseMicDialog(this,(a)=> _audio.StartRecording(a),()=> _audio.StartPlayback());
+            var r = chooseWindow.ShowDialog();
         }
 
         private void StopCall_Click(object sender, RoutedEventArgs e)
